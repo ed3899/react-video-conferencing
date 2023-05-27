@@ -3,8 +3,18 @@ import createToken from "./token";
 import R from "ramda";
 import {VideoGrant} from "livekit-server-sdk";
 
+class TokenError extends Error {
+  errors?: string[];
+
+  constructor(message: string, errors?: string[]) {
+    super(message);
+    this.errors = errors;
+  }
+}
+
 type TokenResponse = {
   token: string;
+  identity: string;
   errors: string[];
 };
 
@@ -46,24 +56,44 @@ export const getTokenHandler: RequestHandler<
   any,
   QueryParams
 > = (req, res) => {
-  const errors = queryPresenceCheck(req as any);
-  if (errors.length > 0) {
-    res.status(403).json({
-      errors,
-    });
-    return;
-  }
+  try {
+    const errors = queryPresenceCheck(req);
+    if (errors.length > 0) {
+      throw new TokenError("Some params were not present", errors);
+    }
 
-  const roomName = req.query.roomName;
-  const roomPattern = /\w{4}\-\w{4}/;
-  const matches = R.match(roomPattern, roomName);
-
-  if (R.isEmpty(matches)) {
-    res.status(403).json({
-      errors: [
+    const {roomName, identity, name, metadata} = req.query;
+    const roomPattern = /\w{4}\-\w{4}/;
+    const matches = R.match(roomPattern, roomName);
+    if (R.isEmpty(matches)) {
+      throw new TokenError("Wrong room name", [
         `The room name '${roomName}' you provided must be in the following format: wwww-wwww`,
-      ],
-    });
-    return;
+      ]);
+    }
+
+    const grant: VideoGrant = {
+      room: roomName,
+      roomJoin: true,
+      canPublish: true,
+      canPublishData: true,
+      canSubscribe: true,
+    };
+
+    const token = createToken({identity, name, metadata}, grant);
+    const response: Partial<TokenResponse> = {
+      identity,
+      token,
+    };
+
+    res.status(200).json(response).end();
+  } catch (error) {
+    const te = error as TokenError;
+    res.statusMessage = te.message;
+    res
+      .status(403)
+      .json({
+        errors: te.errors,
+      })
+      .end();
   }
 };
