@@ -2,10 +2,18 @@ import {Request, RequestHandler, Response} from "express";
 import createToken from "./token";
 import R from "ramda";
 import {VideoGrant} from "livekit-server-sdk";
+import {getLiveKitUrl} from "./utils";
+
+class EmptyQueryParams extends Error {
+  errors?: string[];
+  constructor(message: string, errors?: string[]) {
+    super(message);
+    this.errors = errors;
+  }
+}
 
 class TokenError extends Error {
   errors?: string[];
-
   constructor(message: string, errors?: string[]) {
     super(message);
     this.errors = errors;
@@ -18,25 +26,12 @@ type TokenResponse = {
   errors: string[];
 };
 
-type QueryParams = {
-  roomName: string;
-  identity: string;
-  name: string;
-  metadata: string;
-};
-
 /**
  * @abstract Returns an array with formatted errors
  * @param req
  * @returns
  */
-const queryPresenceCheck = (req: Request): string[] => {
-  const expectedKeys: (keyof QueryParams)[] = [
-    "roomName",
-    "identity",
-    "name",
-    "metadata",
-  ];
+const queryRuntimeCheck = (req: Request, expectedKeys: string[]): string[] => {
   const presentKeys = R.keys(req.query);
 
   if (presentKeys.length != expectedKeys.length) {
@@ -50,14 +45,26 @@ const queryPresenceCheck = (req: Request): string[] => {
   return [];
 };
 
+type TokenQueryParams = {
+  roomName: string;
+  identity: string;
+  name: string;
+  metadata: string;
+};
+
 export const getTokenHandler: RequestHandler<
   {},
   Partial<TokenResponse>,
   any,
-  QueryParams
+  TokenQueryParams
 > = (req, res) => {
   try {
-    const errors = queryPresenceCheck(req);
+    const errors = queryRuntimeCheck(req, [
+      "roomName",
+      "identity",
+      "name",
+      "metadata",
+    ] as (keyof TokenQueryParams)[]);
     if (errors.length > 0) {
       throw new TokenError("Some params were not present", errors);
     }
@@ -93,6 +100,48 @@ export const getTokenHandler: RequestHandler<
       .status(403)
       .json({
         errors: te.errors,
+      })
+      .end();
+  }
+};
+
+type UrlResponse = {
+  url: string;
+  errors: string[];
+};
+
+type UrlQueryParams = {
+  region: string;
+};
+
+export const getServerUrlHandler: RequestHandler<
+  {},
+  Partial<UrlResponse>,
+  any,
+  UrlQueryParams
+> = (req, res) => {
+  try {
+    const errors = queryRuntimeCheck(req, [
+      "region",
+    ] as (keyof UrlQueryParams)[]);
+    if (R.not(R.isEmpty(errors))) {
+      throw new EmptyQueryParams("Query params missing", errors);
+    }
+
+    const url = getLiveKitUrl(req.query.region);
+    res
+      .status(200)
+      .json({
+        url,
+      })
+      .end();
+  } catch (error) {
+    const gue = error as EmptyQueryParams;
+    res.statusMessage = gue.message;
+    res
+      .status(403)
+      .json({
+        errors: gue.errors,
       })
       .end();
   }
