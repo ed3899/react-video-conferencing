@@ -2,17 +2,8 @@ import {Request, RequestHandler, Response} from "express";
 import createToken from "./token";
 import R from "ramda";
 import {VideoGrant} from "livekit-server-sdk";
-import {getLiveKitUrl} from "./utils";
-
+import {getLiveKitUrl, queryRuntimeCheck} from "./utils";
 class EmptyQueryParams extends Error {
-  errors?: string[];
-  constructor(message: string, errors?: string[]) {
-    super(message);
-    this.errors = errors;
-  }
-}
-
-class TokenError extends Error {
   errors?: string[];
   constructor(message: string, errors?: string[]) {
     super(message);
@@ -24,25 +15,6 @@ type TokenResponse = {
   token: string;
   identity: string;
   errors: string[];
-};
-
-/**
- * @abstract Returns an array with formatted errors
- * @param req
- * @returns
- */
-const queryRuntimeCheck = (req: Request, expectedKeys: string[]): string[] => {
-  const presentKeys = R.keys(req.query);
-
-  if (presentKeys.length != expectedKeys.length) {
-    // Return an array with formatted errors
-    return R.map(
-      (q: string | number) => `the query param '${q}' must be present`,
-      R.difference(expectedKeys, presentKeys)
-    );
-  }
-
-  return [];
 };
 
 type TokenQueryParams = {
@@ -66,14 +38,14 @@ export const getTokenHandler: RequestHandler<
       "metadata",
     ] as (keyof TokenQueryParams)[]);
     if (errors.length > 0) {
-      throw new TokenError("Some params were not present", errors);
+      throw new EmptyQueryParams("Some params were not present", errors);
     }
 
     const {roomName, identity, name, metadata} = req.query;
     const roomPattern = /\w{4}\-\w{4}/;
     const matches = R.match(roomPattern, roomName);
     if (R.isEmpty(matches)) {
-      throw new TokenError("Wrong room name", [
+      throw new EmptyQueryParams("Wrong room name", [
         `The room name '${roomName}' you provided must be in the following format: wwww-wwww`,
       ]);
     }
@@ -94,7 +66,7 @@ export const getTokenHandler: RequestHandler<
 
     res.status(200).json(response).end();
   } catch (error) {
-    const te = error as TokenError;
+    const te = error as EmptyQueryParams;
     res.statusMessage = te.message;
     res
       .status(403)
