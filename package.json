@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "serialize-query-params": "^2.0.2"
+  }
+}
